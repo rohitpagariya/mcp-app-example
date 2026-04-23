@@ -5,6 +5,17 @@ rich interactive widget returned by an MCP tool as a `ui://` resource, and the
 widget calls back through the MCP Apps postMessage bridge to invoke a second
 tool that (mock-)sends the message via Microsoft Graph.
 
+![Teams-styled chatbot with an MCP App composer widget rendered inline](docs/screenshot.png)
+
+The screenshot shows the host (`localhost:3000`) after the user typed
+*"Send Babak a message in Teams"*. The assistant's text bubble is what a
+non-UI MCP host would render; below it, the **composer widget** is a
+sandboxed cross-origin iframe served by the MCP server at `localhost:4100` —
+a real MCP App, not a mockup. Typing, formatting, and **Send** all stay
+inside the iframe; **Send** dispatches a `tools/call` over postMessage,
+the host proxies it to the MCP server's `send_message` tool, and the
+in-memory Graph mock logs the delivery.
+
 See `plan.md` for the full design notes.
 
 ## Quick start
