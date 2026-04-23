@@ -16,23 +16,44 @@ inside the iframe; **Send** dispatches a `tools/call` over postMessage,
 the host proxies it to the MCP server's `send_message` tool, and the
 in-memory Graph mock logs the delivery.
 
+The host now also includes a compact **Bridge Timeline** panel that records
+host chat requests, iframe postMessage traffic, and proxied MCP tool calls
+with timestamps and payload previews so you can follow the handshake and send
+flow end to end.
+
 See `plan.md` for the full design notes.
 
 ## Quick start
 
 ```sh
-# 1. Install both packages
-cd server && npm install && cd ..
-cd host   && npm install && cd ..
+# 1. Install dependencies with npm
+cd server && npm install
+cd ../host && npm install
+cd ../e2e && npm install
+cd ..
 
-# 2. Start the MCP server (port 4100)
+# 2. Start the services with npm
 cd server && npm start
+cd ../host && npm start
 
-# 3. In a second terminal, start the host (port 3000)
-cd host && npm start
-
-# 4. Open http://localhost:3000 and type: "Send Babak a message in Teams"
+# 3. Open http://localhost:3000 and type: "Send Babak a message in Teams"
 ```
+
+Optional shell helpers:
+
+```sh
+# Install all workspace dependencies
+./build.sh
+
+# Start all packages that define npm start
+./start.sh
+```
+
+`build.sh` is a shortcut for installing dependencies across `server`, `host`,
+and `e2e`, and it also runs each package's `build` script when one exists.
+
+`start.sh` is a shortcut for starting every package that defines `npm start`.
+It keeps the processes attached and stops them together on `Ctrl+C`.
 
 ## What to look for
 
@@ -47,6 +68,8 @@ cd host && npm start
   in-memory Graph mock.
 - After success the widget shows "Sent ✓" and pushes a `ui/message` that
   appears as a new assistant bubble.
+- The **Bridge Timeline** panel on the right shows each host ↔ MCP App hop in
+  order with a compact preview and expandable raw details.
 
 ## Layout
 

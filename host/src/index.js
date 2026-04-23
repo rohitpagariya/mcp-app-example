@@ -26,7 +26,22 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 3000);
 const MCP_URL = process.env.MCP_URL || 'http://127.0.0.1:4100/mcp';
 
-const mcp = new McpClient(MCP_URL);
+const debugClients = new Set();
+
+function broadcastDebugEvent(event) {
+  const payload = `data: ${JSON.stringify({
+    ...event,
+    timestamp: new Date().toISOString(),
+  })}\n\n`;
+
+  for (const client of debugClients) {
+    client.write(payload);
+  }
+}
+
+const mcp = new McpClient(MCP_URL, {
+  onRpcEvent: (event) => broadcastDebugEvent({ type: 'mcp-rpc', ...event }),
+});
 
 // Which tools may be invoked from an iframe?  An MCP App widget should only
 // be able to call tools exposed by the same server that returned it, and
@@ -37,6 +52,24 @@ const IFRAME_TOOL_ALLOWLIST = new Set(['send_message', 'search_recipients']);
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.resolve(__dirname, '../public')));
+
+app.get('/api/debug/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders?.();
+
+  res.write(`data: ${JSON.stringify({
+    type: 'debug-stream',
+    phase: 'connected',
+    timestamp: new Date().toISOString(),
+  })}\n\n`);
+
+  debugClients.add(res);
+  req.on('close', () => {
+    debugClients.delete(res);
+  });
+});
 
 app.post('/api/chat', async (req, res) => {
   const { message } = req.body || {};

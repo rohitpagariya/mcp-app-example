@@ -56,6 +56,22 @@
         </button>
       </form>
     </section>
+
+    <aside class="debug-pane" aria-label="Debug timeline">
+      <div class="debug-pane-header">
+        <div>
+          <div class="debug-title">Bridge Timeline</div>
+          <div class="debug-subtitle">Host, MCP App, and tool proxy events</div>
+        </div>
+        <button id="debug-clear" class="debug-clear-btn" type="button">Clear</button>
+      </div>
+
+      <div class="debug-pane-summary">
+        <span id="debug-count" class="debug-count">0 events</span>
+      </div>
+
+      <ol id="debug-timeline" class="debug-timeline" aria-live="polite"></ol>
+    </aside>
   </div>
 
   <script type="module" src="/chat.js"></script>

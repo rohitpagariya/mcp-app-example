@@ -26,7 +26,7 @@ body { overflow: hidden; }
 
 .shell {
   display: grid;
-  grid-template-columns: 68px 1fr;
+  grid-template-columns: 68px minmax(0, calc(50vw - 68px)) 50vw;
   height: 100vh;
 }
 
@@ -225,6 +225,193 @@ body { overflow: hidden; }
   justify-content: center;
 }
 .composer-send:hover { background: var(--accent-hover); }
+
+/* ── Debug pane ─────────────────────────────────────────────────────── */
+.debug-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: #FFFFFF;
+  border-left: 1px solid var(--border);
+}
+.debug-pane-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.debug-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.debug-subtitle {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+.debug-pane-summary {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #F6F7FA;
+}
+.debug-count {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.debug-clear-btn {
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text);
+  border-radius: 0;
+  padding: 5px 10px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.debug-clear-btn:hover {
+  background: var(--surface-alt);
+}
+.debug-timeline {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.debug-entry {
+  border-bottom: 1px solid var(--border);
+  background: white;
+  padding: 10px 14px;
+}
+.debug-entry-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.debug-entry-main {
+  min-width: 0;
+}
+.debug-entry-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.debug-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+.debug-icon.outgoing {
+  color: #C4314B;
+}
+.debug-icon.incoming {
+  color: #107C10;
+}
+.debug-icon.local {
+  color: #5B5FC7;
+}
+.debug-time {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.debug-label {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+.debug-protocol {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: Consolas, "Cascadia Code", monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.debug-preview {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.debug-preview-row {
+  margin-top: 2px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.debug-preview-row .debug-preview {
+  margin-top: 0;
+  flex: 1;
+  min-width: 0;
+}
+.debug-detail-toggle {
+  flex: none;
+}
+.debug-detail-toggle > summary {
+  cursor: pointer;
+  list-style: none;
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.debug-detail-toggle > summary::-webkit-details-marker {
+  display: none;
+}
+.debug-detail {
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 0;
+  background: #F6F7FA;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+.debug-detail-toggle[open] {
+  display: block;
+}
+
+@media (max-width: 1100px) {
+  body { overflow: auto; }
+
+  .shell {
+    grid-template-columns: 68px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) 260px;
+    min-height: 100vh;
+    height: auto;
+  }
+
+  .chat-pane {
+    min-height: 0;
+  }
+
+  .debug-pane {
+    grid-column: 2;
+    border-left: none;
+    border-top: 1px solid var(--border);
+    min-height: 0;
+  }
+}
 
 /* ── Link-open confirm ───────────────────────────────────────────────── */
 .dialog-backdrop {
