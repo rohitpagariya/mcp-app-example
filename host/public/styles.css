@@ -1,0 +1,274 @@
+:root {
+  --accent: #5B5FC7;
+  --accent-hover: #4F52B2;
+  --surface: #FFFFFF;
+  --surface-alt: #F5F5F5;
+  --surface-hover: #EBEBEB;
+  --border: #E1E1E1;
+  --text: #242424;
+  --text-muted: #616161;
+  --bubble-user: #E8EBFA;
+  --bubble-assistant: #F5F5F5;
+  --font: "Segoe UI", -apple-system, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  font-family: var(--font);
+  font-size: 14px;
+  color: var(--text);
+  background: #FAFAFA;
+}
+body { overflow: hidden; }
+
+.shell {
+  display: grid;
+  grid-template-columns: 68px 1fr;
+  height: 100vh;
+}
+
+/* ── Left rail ───────────────────────────────────────────────────────── */
+.rail {
+  background: #EBEBEB;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 6px;
+}
+.rail-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  cursor: pointer;
+  position: relative;
+}
+.rail-icon:hover { background: var(--surface-hover); }
+.rail-icon.active {
+  color: var(--accent);
+}
+.rail-icon.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* ── Chat pane ───────────────────────────────────────────────────────── */
+.chat-pane {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  min-width: 0;
+}
+.chat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.recipient {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.recipient .avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  color: white;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.recipient .name { font-weight: 600; }
+.recipient .presence { font-size: 12px; color: var(--text-muted); }
+.chat-header-actions { display: flex; gap: 2px; }
+.icon-btn {
+  border: none;
+  background: transparent;
+  width: 34px;
+  height: 34px;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.icon-btn:hover { background: var(--surface-alt); color: var(--text); }
+
+/* ── Message list ────────────────────────────────────────────────────── */
+.message-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.bubble-row {
+  display: flex;
+  gap: 8px;
+  max-width: 75%;
+}
+.bubble-row.user {
+  align-self: flex-end;
+  flex-direction: row-reverse;
+}
+.bubble-row.user .avatar { display: none; }
+.avatar-sm {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: auto;
+}
+.bubble {
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.bubble.user    { background: var(--bubble-user); border: 1px solid #D1D6F0; }
+.bubble.assistant { background: var(--bubble-assistant); border: 1px solid var(--border); }
+.bubble em  { font-style: italic; }
+.bubble strong { font-weight: 600; }
+.bubble code {
+  background: rgba(0,0,0,.06);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: Consolas, "Cascadia Code", monospace;
+  font-size: 12.5px;
+}
+
+/* ── MCP App bubble (iframe container) ───────────────────────────────── */
+.bubble-row.mcp-app {
+  max-width: 420px;
+  width: 420px;   /* reserve room for the 360px widget + padding */
+}
+.bubble-row.mcp-app > div {
+  flex: 1;
+  min-width: 0;
+}
+.mcp-app-frame {
+  border: none;
+  width: 380px;            /* > widget card (360px) to avoid clipping */
+  height: 420px;           /* initial; widget will ui/notifications/size-changed */
+  display: block;
+  background: transparent;
+  border-radius: 8px;
+  overflow: hidden;
+  transition: height .15s ease;
+}
+.mcp-app-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: Consolas, "Cascadia Code", monospace;
+}
+
+/* ── Composer ────────────────────────────────────────────────────────── */
+.composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.composer-input {
+  flex: 1;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+  background: var(--surface);
+}
+.composer-input:focus { border-color: var(--accent); }
+.composer-send {
+  width: 38px;
+  height: 38px;
+  border-radius: 6px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.composer-send:hover { background: var(--accent-hover); }
+
+/* ── Link-open confirm ───────────────────────────────────────────────── */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.dialog {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  width: 380px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+}
+.dialog h3 { margin: 0 0 8px; font-size: 16px; }
+.dialog .url {
+  background: var(--surface-alt);
+  padding: 8px;
+  border-radius: 4px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+  word-break: break-all;
+  margin: 8px 0 16px;
+}
+.dialog .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.dialog button {
+  font-family: inherit;
+  font-size: 13px;
+  border-radius: 4px;
+  border: 1px solid #C7C7C7;
+  background: white;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.dialog button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}

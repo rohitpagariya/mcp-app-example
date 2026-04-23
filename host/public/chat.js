@@ -1,0 +1,363 @@
+// Browser-side host logic.
+//
+// Renders chat bubbles and, for assistant responses that include an MCP App
+// UI resource, renders a sandboxed cross-origin iframe and wires up the
+// MCP Apps postMessage bridge:
+//
+//   host → iframe   ui/initialize
+//   iframe → host   ui/initialized
+//   iframe → host   tools/call              (proxied to /api/tool)
+//   iframe → host   ui/open-link            (confirmed, then window.open)
+//   iframe → host   ui/message              (appended as assistant bubble)
+//   iframe → host   ui/notifications/size-changed
+//
+// Security posture:
+//   - Iframe uses sandbox="allow-scripts" (no allow-same-origin). The widget
+//     cannot read host cookies or DOM.
+//   - On every incoming postMessage we verify `event.source` matches the
+//     specific iframe we spawned AND that `event.origin` is the server
+//     origin we expect.
+//   - Iframes may only call tools on the allowlist the host enforces
+//     server-side (see /api/tool).
+
+const WIDGET_ORIGIN = 'http://localhost:4100';
+
+// Log-coloring helpers so the protocol trace is easy to read in DevTools.
+const L = {
+  host: 'color:#5B5FC7;font-weight:600',
+  in: 'color:#107C10',
+  out: 'color:#C4314B',
+  muted: 'color:#8A8886',
+};
+console.log('%c[host]%c chat page booted', L.host, L.muted);
+
+const messageList = document.getElementById('message-list');
+const form = document.getElementById('composer');
+const input = document.getElementById('composer-input');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  addTextBubble('user', text);
+  console.log('%c[host]%c user sent: %o', L.host, L.muted, text);
+
+  try {
+    console.log('%c[host → /api/chat]%c POST', L.out, L.muted, { message: text });
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: text }),
+    });
+    const { bubbles } = await res.json();
+    console.log(
+      '%c[host ← /api/chat]%c %d bubble(s): %o',
+      L.in,
+      L.muted,
+      bubbles.length,
+      bubbles.map((b) => b.type),
+    );
+    for (const b of bubbles) {
+      if (b.type === 'text') addTextBubble('assistant', b.text);
+      else if (b.type === 'mcp-app') addMcpAppBubble(b);
+    }
+    scrollToBottom();
+  } catch (err) {
+    addTextBubble('assistant', `(error: ${err.message})`);
+  }
+});
+
+// ─── Chat bubbles ─────────────────────────────────────────────────────
+function addTextBubble(role, text) {
+  const row = document.createElement('div');
+  row.className = `bubble-row ${role}`;
+  row.innerHTML = `
+    <span class="avatar-sm" style="background:${role === 'user' ? '#8764B8' : '#5B5FC7'}">${role === 'user' ? 'U' : 'C'}</span>
+    <div class="bubble ${role}">${renderInline(text)}</div>
+  `;
+  messageList.appendChild(row);
+  scrollToBottom();
+}
+
+// Minimal markdown-ish rendering for assistant text — **bold**, *italic*, `code`.
+function renderInline(text) {
+  return String(text)
+    // Preserve entity references the server already emitted (e.g. &lt;name&gt;).
+    .replace(/&(?!#?\w+;)/g, '&amp;')
+    .replace(/(?<![a-z0-9])\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(?<![a-z0-9*])\*([^*\n]+)\*/g, '<em>$1</em>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>');
+}
+
+function scrollToBottom() {
+  messageList.scrollTop = messageList.scrollHeight;
+}
+
+// ─── MCP App rendering ────────────────────────────────────────────────
+function addMcpAppBubble(b) {
+  const row = document.createElement('div');
+  row.className = 'bubble-row assistant mcp-app';
+  // sandbox notes:
+  //   allow-scripts       — the widget is a JS app
+  //   allow-same-origin   — widget is served cross-origin from :4100, so the
+  //                         same-origin rule still isolates it from the host
+  //                         at :3000. We need this so the iframe's document
+  //                         origin is the actual :4100 (not "null"), which
+  //                         lets the host use a strict `targetOrigin` on
+  //                         postMessage (which in turn prevents leaking
+  //                         messages if the iframe ever navigates).
+  //   allow-forms         — Enter-to-submit inside the composer
+  //   allow-popups        — ui/open-link can open a new tab
+  //   allow-popups-to-escape-sandbox — the Teams deep link opens unsandboxed
+  row.innerHTML = `
+    <span class="avatar-sm" style="background:#5B5FC7">C</span>
+    <div>
+      <iframe
+        class="mcp-app-frame"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+        referrerpolicy="no-referrer"
+        title="MCP App: ${escapeAttr(b.toolName)}"
+      ></iframe>
+      <div class="mcp-app-meta">mcp-app · ${escapeAttr(b.resource.uri)}</div>
+    </div>
+  `;
+  const frame = row.querySelector('iframe');
+  messageList.appendChild(row);
+  mountMcpApp(frame, b);
+  scrollToBottom();
+}
+
+function mountMcpApp(iframe, bubble) {
+  console.log(
+    '%c[host]%c mounting MCP App %o → iframe src=%s',
+    L.host,
+    L.muted,
+    { uri: bubble.resource.uri, toolName: bubble.toolName },
+    bubble.resource.externalUrl,
+  );
+  // Per-iframe RPC server state.
+  const bridge = {
+    iframe,
+    expectedOrigin: WIDGET_ORIGIN,
+    bubble,
+    handleMessage: null,
+  };
+
+  bridge.handleMessage = (ev) => {
+    // Guardrails: only trust messages from our own iframe's window and the
+    // expected origin.
+    if (ev.source !== iframe.contentWindow) return;
+    if (ev.origin !== bridge.expectedOrigin) return;
+    const frame = ev.data;
+    if (!frame || frame.jsonrpc !== '2.0') return;
+    dispatchFromIframe(bridge, frame);
+  };
+  window.addEventListener('message', bridge.handleMessage);
+
+  // Navigate the iframe to the widget URL. We do this after attaching the
+  // listener so we can catch an extremely fast ui/initialized if the widget
+  // runs synchronously on load.
+  iframe.addEventListener('load', () => sendInitialize(bridge), { once: true });
+  iframe.src = bubble.resource.externalUrl;
+}
+
+function sendInitialize(bridge) {
+  const params = {
+    protocolVersion: '2026-01-26',
+    toolName: bridge.bubble.toolName,
+    // toolInput is what the tool was called with, plus the structured output
+    // (so the widget gets the resolved recipient record without another call).
+    toolInput: { ...bridge.bubble.toolInput, ...(bridge.bubble.structuredContent || {}) },
+    toolResult: bridge.bubble.toolResult,
+    hostContext: {
+      theme: 'light',
+      locale: 'en-US',
+      styleVariables: {
+        '--mcp-accent': '#5B5FC7',
+        '--mcp-surface': '#FFFFFF',
+      },
+      capabilities: {
+        tools: true,
+        openLink: true,
+        message: true,
+        downloadFile: false,
+      },
+    },
+  };
+  console.log(
+    '%c[host → iframe]%c ui/initialize %o',
+    L.out,
+    L.muted,
+    params,
+  );
+  postToIframe(bridge, {
+    jsonrpc: '2.0',
+    id: 'init-' + Date.now(),
+    method: 'ui/initialize',
+    params,
+  });
+}
+
+function postToIframe(bridge, frame) {
+  bridge.iframe.contentWindow?.postMessage(frame, bridge.expectedOrigin);
+}
+
+async function dispatchFromIframe(bridge, frame) {
+  // Response to a host-initiated call: we only use this for ui/initialize ack.
+  if (frame.id != null && (frame.result !== undefined || frame.error)) {
+    console.log(
+      '%c[host ← iframe]%c reply id=%o %o',
+      L.in,
+      L.muted,
+      frame.id,
+      frame.result ?? frame.error,
+    );
+    return;
+  }
+
+  console.log(
+    '%c[host ← iframe]%c %s id=%o %o',
+    L.in,
+    L.muted,
+    frame.method,
+    frame.id ?? '(notification)',
+    frame.params,
+  );
+
+  switch (frame.method) {
+    case 'ui/initialized':
+      // Widget has finished its handshake.
+      return;
+
+    case 'tools/call': {
+      const { name, arguments: args } = frame.params || {};
+      try {
+        console.log(
+          '%c[host → /api/tool]%c %s %o',
+          L.out,
+          L.muted,
+          name,
+          args,
+        );
+        const res = await fetch('/api/tool', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, arguments: args }),
+        });
+        const body = await res.json();
+        console.log(
+          '%c[host ← /api/tool]%c %s → %o',
+          L.in,
+          L.muted,
+          name,
+          body.error ? { error: body.error } : body.result?.structuredContent ?? body.result,
+        );
+        if (!res.ok || body.error) {
+          postToIframe(bridge, {
+            jsonrpc: '2.0',
+            id: frame.id,
+            error: body.error || { code: -32000, message: `HTTP ${res.status}` },
+          });
+        } else {
+          postToIframe(bridge, {
+            jsonrpc: '2.0',
+            id: frame.id,
+            result: body.result,
+          });
+        }
+      } catch (err) {
+        postToIframe(bridge, {
+          jsonrpc: '2.0',
+          id: frame.id,
+          error: { code: -32000, message: err.message },
+        });
+      }
+      return;
+    }
+
+    case 'ui/open-link': {
+      const url = frame.params?.url;
+      if (!url) return;
+      console.log('%c[host]%c ui/open-link → confirming %s', L.host, L.muted, url);
+      const allow = await confirmOpenLink(url);
+      console.log('%c[host]%c open-link confirmed=%o', L.host, L.muted, allow);
+      if (allow) window.open(url, '_blank', 'noopener');
+      if (frame.id != null) {
+        postToIframe(bridge, {
+          jsonrpc: '2.0',
+          id: frame.id,
+          result: { opened: allow },
+        });
+      }
+      return;
+    }
+
+    case 'ui/message': {
+      const text = frame.params?.text;
+      if (text) {
+        console.log(
+          '%c[host]%c iframe pushed ui/message → appending assistant bubble',
+          L.host,
+          L.muted,
+        );
+        addTextBubble('assistant', text);
+      }
+      return;
+    }
+
+    case 'ui/notifications/size-changed': {
+      const h = Math.max(120, Math.min(700, Number(frame.params?.height || 0)));
+      if (h) bridge.iframe.style.height = `${h}px`;
+      scrollToBottom();
+      return;
+    }
+
+    default:
+      console.warn('%c[host]%c unknown iframe method %s', L.host, L.muted, frame.method);
+      if (frame.id != null) {
+        postToIframe(bridge, {
+          jsonrpc: '2.0',
+          id: frame.id,
+          error: { code: -32601, message: `Unknown method: ${frame.method}` },
+        });
+      }
+  }
+}
+
+// ─── Open-link confirm dialog ─────────────────────────────────────────
+function confirmOpenLink(url) {
+  return new Promise((resolve) => {
+    const bd = document.createElement('div');
+    bd.className = 'dialog-backdrop';
+    bd.innerHTML = `
+      <div class="dialog" role="dialog" aria-modal="true">
+        <h3>Open link?</h3>
+        <div class="url">${escapeAttr(url)}</div>
+        <div class="actions">
+          <button data-act="cancel">Cancel</button>
+          <button class="primary" data-act="open">Open</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(bd);
+    bd.addEventListener('click', (e) => {
+      const act = e.target.dataset?.act;
+      if (!act) return;
+      bd.remove();
+      resolve(act === 'open');
+    });
+  });
+}
+
+function escapeAttr(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+// ─── Greeting ─────────────────────────────────────────────────────────
+addTextBubble(
+  'assistant',
+  "Hi! I'm a demo host for MCP Apps. Try: *Send Babak a message in Teams*",
+);

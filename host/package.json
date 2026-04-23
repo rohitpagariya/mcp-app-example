@@ -1,0 +1,14 @@
+{
+  "name": "mcp-app-example-host",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Teams-style chatbot host that renders MCP Apps UI resources in sandboxed iframes",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "express": "^4.21.1"
+  }
+}

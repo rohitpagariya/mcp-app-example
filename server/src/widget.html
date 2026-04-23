@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Send a message in Teams</title>
+  <style>
+    :root {
+      --accent: #5B5FC7;
+      --accent-hover: #4F52B2;
+      --surface: #FFFFFF;
+      --surface-alt: #F5F5F5;
+      --border: #E1E1E1;
+      --border-strong: #C7C7C7;
+      --text: #242424;
+      --text-muted: #616161;
+      --success: #107C10;
+      --danger: #C4314B;
+      --font: "Segoe UI", -apple-system, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      font-family: var(--font);
+      font-size: 14px;
+      color: var(--text);
+      background: transparent;
+      overflow: hidden;
+    }
+    .card {
+      width: 360px;
+      margin: 4px 8px;         /* small gutter inside iframe */
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      box-shadow: 0 1.6px 3.6px rgba(0,0,0,.08), 0 0.3px 0.9px rgba(0,0,0,.05);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .header .icon {
+      width: 20px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+    .header .title {
+      font-size: 14px;
+      font-weight: 600;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .header .actions {
+      display: flex;
+      gap: 6px;
+    }
+    button {
+      font-family: inherit;
+      font-size: 13px;
+      border-radius: 4px;
+      border: 1px solid var(--border-strong);
+      background: var(--surface);
+      color: var(--text);
+      padding: 4px 10px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: background .15s;
+    }
+    button:hover { background: var(--surface-alt); }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    button.primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    button.ghost {
+      border-color: transparent;
+      background: transparent;
+    }
+    button.ghost:hover { background: var(--surface-alt); }
+
+    .to-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      position: relative;
+    }
+    .to-row .label {
+      color: var(--text-muted);
+      font-size: 13px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--surface-alt);
+      border-radius: 14px;
+      padding: 2px 4px 2px 2px;
+      font-size: 13px;
+    }
+    .chip .avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .chip .remove {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1;
+    }
+    .chip .remove:hover { background: rgba(0,0,0,.06); }
+    .to-input {
+      border: none;
+      outline: none;
+      font-family: inherit;
+      font-size: 13px;
+      flex: 1;
+      padding: 4px;
+      min-width: 80px;
+      background: transparent;
+    }
+    .suggestions {
+      position: absolute;
+      top: 100%;
+      left: 12px;
+      right: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      box-shadow: 0 4px 12px rgba(0,0,0,.1);
+      max-height: 180px;
+      overflow-y: auto;
+      z-index: 10;
+      display: none;
+    }
+    .suggestions.visible { display: block; }
+    .suggestion {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      cursor: pointer;
+    }
+    .suggestion:hover, .suggestion.active { background: var(--surface-alt); }
+    .suggestion .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      color: white;
+      font-size: 11px;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .suggestion .meta {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.2;
+    }
+    .suggestion .meta .name { font-size: 13px; }
+    .suggestion .meta .email { font-size: 11px; color: var(--text-muted); }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .toolbar button {
+      border: none;
+      padding: 4px 7px;
+      font-size: 14px;
+      border-radius: 4px;
+      color: var(--text);
+      min-width: 26px;
+      justify-content: center;
+    }
+    .toolbar button.active { background: var(--surface-alt); }
+    .toolbar .divider {
+      width: 1px;
+      background: var(--border);
+      align-self: stretch;
+      margin: 4px 4px;
+    }
+    .toolbar .b { font-weight: 700; }
+    .toolbar .i { font-style: italic; }
+    .toolbar .u { text-decoration: underline; }
+    .toolbar .s { text-decoration: line-through; }
+
+    .body {
+      min-height: 140px;
+      max-height: 240px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+      outline: none;
+      overflow-y: auto;
+      cursor: text;
+    }
+    .body:empty::before {
+      content: attr(data-placeholder);
+      color: var(--text-muted);
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      padding: 4px 8px;
+      border-top: 1px solid var(--border);
+    }
+    .footer button { padding: 4px 6px; }
+
+    .status {
+      padding: 8px 12px;
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      display: none;
+    }
+    .status.visible { display: block; }
+    .status.success { color: var(--success); background: #E6F4EA; }
+    .status.error { color: var(--danger); background: #FDEDED; }
+  </style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="header">
+      <span class="icon" aria-hidden="true">
+        <!-- speech bubble -->
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2.5 4.5a2 2 0 012-2h7a2 2 0 012 2v5a2 2 0 01-2 2H7l-3 2.5V11.5a2 2 0 01-1.5-1.94v-5z"/>
+        </svg>
+      </span>
+      <span class="title">Send a message in Teams</span>
+      <div class="actions">
+        <button class="ghost" id="btn-open" title="Open in Teams">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9 2.5h4.5V7M13.5 2.5L8 8"/>
+            <path d="M13 8.5v4a1 1 0 01-1 1H3.5a1 1 0 01-1-1v-8.5a1 1 0 011-1H7"/>
+          </svg>
+          Open
+        </button>
+        <button class="primary" id="btn-send">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M2 8l12-5-5 12-2-5-5-2z"/>
+          </svg>
+          Send
+        </button>
+      </div>
+    </div>
+
+    <div class="to-row" id="to-row">
+      <span class="label">To:</span>
+      <div id="chip-container"></div>
+      <input type="text" class="to-input" id="to-input" placeholder="" autocomplete="off">
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+
+    <div class="toolbar" id="toolbar">
+      <button data-cmd="bold" class="b" title="Bold">B</button>
+      <button data-cmd="italic" class="i" title="Italic">I</button>
+      <button data-cmd="underline" class="u" title="Underline">U</button>
+      <button data-cmd="strikeThrough" class="s" title="Strikethrough">S</button>
+      <span class="divider"></span>
+      <button data-cmd="insertUnorderedList" title="Bulleted list">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="3" cy="4" r="1" fill="currentColor"/><circle cx="3" cy="8" r="1" fill="currentColor"/><circle cx="3" cy="12" r="1" fill="currentColor"/><path d="M6 4h8M6 8h8M6 12h8"/></svg>
+      </button>
+      <button data-cmd="insertOrderedList" title="Numbered list">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 4h8M6 8h8M6 12h8"/><text x="1" y="6" font-size="5" fill="currentColor" stroke="none">1.</text><text x="1" y="10" font-size="5" fill="currentColor" stroke="none">2.</text><text x="1" y="14" font-size="5" fill="currentColor" stroke="none">3.</text></svg>
+      </button>
+    </div>
+
+    <div
+      class="body"
+      id="body"
+      contenteditable="true"
+      data-placeholder="It is a long established fact that a reader will be distracted by the readable content of a page when looking at its layout. It is a long…"
+    ></div>
+
+    <div class="footer">
+      <button class="ghost" id="btn-emoji" title="Emoji">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="8" cy="8" r="6"/>
+          <circle cx="6" cy="7" r=".5" fill="currentColor"/>
+          <circle cx="10" cy="7" r=".5" fill="currentColor"/>
+          <path d="M5.5 10c.7.8 1.6 1.2 2.5 1.2s1.8-.4 2.5-1.2"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    /**
+     * MCP Apps widget bridge.
+     *
+     * The host embeds this HTML in a sandboxed cross-origin iframe and
+     * communicates over window.postMessage using JSON-RPC 2.0 frames. This
+     * module implements the widget side of the "MCP Apps" dialect described
+     * at https://modelcontextprotocol.io/extensions/apps/overview :
+     *
+     *   host → iframe   ui/initialize                    (request, expects ack)
+     *   host → iframe   ui/notifications/tool-input
+     *   host → iframe   ui/notifications/host-context-changed
+     *   host → iframe   ui/notifications/size-changed    (from host, e.g. viewport)
+     *   iframe → host   ui/initialized                   (notification)
+     *   iframe → host   tools/call                       (request, expects result)
+     *   iframe → host   ui/open-link                     (request)
+     *   iframe → host   ui/message                       (notification — push text into chat)
+     *   iframe → host   ui/notifications/size-changed    (notification)
+     */
+    // Colored log helpers so the protocol trace is easy to spot in DevTools.
+    const LW = {
+      tag: 'color:#D83B01;font-weight:600',
+      out: 'color:#C4314B',
+      in: 'color:#107C10',
+      muted: 'color:#8A8886',
+    };
+    console.log('%c[widget]%c script booted @ %s', LW.tag, LW.muted, location.href);
+
+    const bridge = (() => {
+      const pending = new Map();
+      let seq = 1;
+      let initialized = false;
+      // Captured from the first authenticated inbound frame (ui/initialize).
+      // Subsequent sends use this exact origin as postMessage targetOrigin so
+      // the widget never leaks frames to a parent it hasn't been addressed by.
+      let hostOrigin = null;
+
+      function send(frame) {
+        // Before the handshake we haven't heard from any parent yet, so we
+        // cannot know a safe targetOrigin. Drop rather than broadcast — any
+        // message worth sending happens after ui/initialize.
+        if (!hostOrigin) {
+          console.warn('[widget] dropping outbound frame before handshake', frame.method);
+          return;
+        }
+        parent.postMessage(frame, hostOrigin);
+      }
+
+      function call(method, params) {
+        const id = seq++;
+        console.log(
+          '%c[widget → host]%c %s id=%d %o',
+          LW.out,
+          LW.muted,
+          method,
+          id,
+          params,
+        );
+        return new Promise((resolve, reject) => {
+          pending.set(id, { resolve, reject });
+          send({ jsonrpc: '2.0', id, method, params });
+        });
+      }
+
+      function notify(method, params) {
+        console.log(
+          '%c[widget → host]%c %s (notify) %o',
+          LW.out,
+          LW.muted,
+          method,
+          params,
+        );
+        send({ jsonrpc: '2.0', method, params });
+      }
+
+      function reply(id, result) {
+        console.log(
+          '%c[widget → host]%c reply id=%o %o',
+          LW.out,
+          LW.muted,
+          id,
+          result,
+        );
+        send({ jsonrpc: '2.0', id, result });
+      }
+
+      const handlers = {
+        'ui/initialize': null,
+        'ui/notifications/tool-input': null,
+        'ui/notifications/tool-result': null,
+        'ui/notifications/host-context-changed': null,
+      };
+
+      window.addEventListener('message', (ev) => {
+        const frame = ev.data;
+        if (!frame || frame.jsonrpc !== '2.0') return;
+
+        // Lock onto the host origin from the first frame. Any later message
+        // from a different origin — i.e. not the parent that onboarded us —
+        // is ignored outright. This is the widget's side of the origin check;
+        // the host does the mirror check against its expected iframe origin.
+        if (hostOrigin === null) {
+          hostOrigin = ev.origin;
+        } else if (ev.origin !== hostOrigin) {
+          console.warn('[widget] ignoring frame from unexpected origin', ev.origin);
+          return;
+        }
+
+        // Response to one of our calls.
+        if (frame.id != null && (frame.result !== undefined || frame.error)) {
+          console.log(
+            '%c[widget ← host]%c reply id=%o %o',
+            LW.in,
+            LW.muted,
+            frame.id,
+            frame.result ?? frame.error,
+          );
+          const p = pending.get(frame.id);
+          if (!p) return;
+          pending.delete(frame.id);
+          if (frame.error) p.reject(frame.error);
+          else p.resolve(frame.result);
+          return;
+        }
+
+        // Incoming request or notification from host.
+        console.log(
+          '%c[widget ← host]%c %s id=%o %o',
+          LW.in,
+          LW.muted,
+          frame.method,
+          frame.id ?? '(notification)',
+          frame.params,
+        );
+        const h = handlers[frame.method];
+        if (h) {
+          Promise.resolve(h(frame.params))
+            .then((r) => frame.id != null && reply(frame.id, r ?? {}))
+            .catch((e) => console.error('[widget] handler error', frame.method, e));
+        } else if (frame.id != null) {
+          send({ jsonrpc: '2.0', id: frame.id, error: { code: -32601, message: 'Method not found' } });
+        }
+      });
+
+      return {
+        onInitialize(fn) { handlers['ui/initialize'] = fn; },
+        onToolInput(fn) { handlers['ui/notifications/tool-input'] = fn; },
+        onToolResult(fn) { handlers['ui/notifications/tool-result'] = fn; },
+        onHostContextChanged(fn) { handlers['ui/notifications/host-context-changed'] = fn; },
+        callTool: (name, args) => call('tools/call', { name, arguments: args }),
+        openLink: (url) => call('ui/open-link', { url }),
+        sendMessage: (text) => notify('ui/message', { text }),
+        notifySize: (size) => notify('ui/notifications/size-changed', size),
+        notifyInitialized: () => { initialized = true; notify('ui/initialized', {}); },
+        isInitialized: () => initialized,
+      };
+    })();
+
+    // ─── Widget UI logic ─────────────────────────────────────────────────
+    const state = {
+      recipient: null,          // { displayName, email, initials, color }
+      isSending: false,
+      suggestions: [],
+      activeIdx: -1,
+    };
+
+    const el = {
+      card: document.getElementById('card'),
+      chipContainer: document.getElementById('chip-container'),
+      toInput: document.getElementById('to-input'),
+      toRow: document.getElementById('to-row'),
+      suggestions: document.getElementById('suggestions'),
+      body: document.getElementById('body'),
+      btnSend: document.getElementById('btn-send'),
+      btnOpen: document.getElementById('btn-open'),
+      btnEmoji: document.getElementById('btn-emoji'),
+      status: document.getElementById('status'),
+      toolbar: document.getElementById('toolbar'),
+    };
+
+    function renderChip() {
+      el.chipContainer.innerHTML = '';
+      if (!state.recipient) {
+        el.toInput.placeholder = 'Type a name…';
+        return;
+      }
+      el.toInput.placeholder = '';
+      const r = state.recipient;
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = `
+        <span class="avatar" style="background:${r.color}">${r.initials}</span>
+        <span>${escapeHtml(r.displayName)}</span>
+        <span class="remove" title="Remove">×</span>
+      `;
+      chip.querySelector('.remove').addEventListener('click', () => {
+        state.recipient = null;
+        renderChip();
+        reportSize();
+        el.toInput.focus();
+      });
+      el.chipContainer.appendChild(chip);
+    }
+
+    function setRecipient(r) {
+      state.recipient = r;
+      renderChip();
+      el.suggestions.classList.remove('visible');
+      el.toInput.value = '';
+      reportSize();
+    }
+
+    async function runTypeahead(q) {
+      try {
+        const res = await bridge.callTool('search_recipients', { query: q });
+        const results = res?.structuredContent?.results ?? [];
+        state.suggestions = results;
+        state.activeIdx = results.length ? 0 : -1;
+        renderSuggestions();
+      } catch (e) {
+        console.error('[widget] search_recipients failed', e);
+      }
+    }
+
+    function renderSuggestions() {
+      if (!state.suggestions.length) {
+        el.suggestions.classList.remove('visible');
+        return;
+      }
+      el.suggestions.innerHTML = state.suggestions
+        .map(
+          (r, i) => `
+          <div class="suggestion${i === state.activeIdx ? ' active' : ''}" data-idx="${i}">
+            <span class="avatar" style="background:${r.color}">${r.initials}</span>
+            <div class="meta">
+              <span class="name">${escapeHtml(r.displayName)}</span>
+              <span class="email">${escapeHtml(r.email)}</span>
+            </div>
+          </div>`,
+        )
+        .join('');
+      el.suggestions.classList.add('visible');
+      el.suggestions.querySelectorAll('.suggestion').forEach((node) => {
+        node.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          const idx = Number(node.dataset.idx);
+          setRecipient(state.suggestions[idx]);
+        });
+      });
+    }
+
+    el.toInput.addEventListener('input', (e) => {
+      const q = e.target.value.trim();
+      if (!q) {
+        el.suggestions.classList.remove('visible');
+        return;
+      }
+      runTypeahead(q);
+    });
+    el.toInput.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown') {
+        state.activeIdx = Math.min(state.activeIdx + 1, state.suggestions.length - 1);
+        renderSuggestions();
+        e.preventDefault();
+      } else if (e.key === 'ArrowUp') {
+        state.activeIdx = Math.max(state.activeIdx - 1, 0);
+        renderSuggestions();
+        e.preventDefault();
+      } else if (e.key === 'Enter' && state.activeIdx >= 0) {
+        setRecipient(state.suggestions[state.activeIdx]);
+        e.preventDefault();
+      } else if (e.key === 'Backspace' && !el.toInput.value && state.recipient) {
+        state.recipient = null;
+        renderChip();
+      }
+    });
+    el.toInput.addEventListener('focus', () => {
+      if (!state.recipient) runTypeahead('');
+    });
+    document.addEventListener('click', (e) => {
+      if (!el.toRow.contains(e.target))
+        el.suggestions.classList.remove('visible');
+    });
+
+    // ─── Toolbar (bold/italic/etc via execCommand — fine for a demo) ────
+    el.toolbar.addEventListener('mousedown', (e) => {
+      const btn = e.target.closest('button[data-cmd]');
+      if (!btn) return;
+      e.preventDefault();
+      document.execCommand(btn.dataset.cmd, false);
+      updateToolbarActive();
+      el.body.focus();
+    });
+    el.body.addEventListener('keyup', updateToolbarActive);
+    el.body.addEventListener('mouseup', updateToolbarActive);
+    function updateToolbarActive() {
+      el.toolbar.querySelectorAll('button[data-cmd]').forEach((b) => {
+        try {
+          if (document.queryCommandState(b.dataset.cmd)) b.classList.add('active');
+          else b.classList.remove('active');
+        } catch {}
+      });
+    }
+
+    // ─── Emoji (hard-coded, for flavor) ──────────────────────────────────
+    el.btnEmoji.addEventListener('click', () => {
+      const picks = ['👋', '👍', '🎉', '🙌', '💡', '🚀'];
+      const char = picks[Math.floor(Math.random() * picks.length)];
+      el.body.focus();
+      document.execCommand('insertText', false, char);
+    });
+
+    // ─── Send & Open ─────────────────────────────────────────────────────
+    el.btnSend.addEventListener('click', async () => {
+      if (!state.recipient) {
+        showStatus('Please pick a recipient first.', 'error');
+        return;
+      }
+      const html = (el.body.innerHTML || '').trim();
+      if (!html || el.body.innerText.trim() === '') {
+        showStatus('Message body is empty.', 'error');
+        return;
+      }
+      console.log('%c[widget]%c Send clicked', LW.tag, LW.muted);
+      state.isSending = true;
+      el.btnSend.disabled = true;
+      el.btnSend.textContent = 'Sending…';
+
+      try {
+        const res = await bridge.callTool('send_message', {
+          to: state.recipient.email,
+          html,
+        });
+        const msgId = res?.structuredContent?.id ?? '(unknown)';
+        console.log('%c[widget]%c send_message succeeded id=%s', LW.tag, LW.muted, msgId);
+        showStatus(`Sent ✓  (${msgId})`, 'success');
+        el.btnSend.innerHTML = '<span>✓</span> Sent';
+        // Push a follow-up assistant bubble into the host chat.
+        bridge.sendMessage(`I sent the message to ${state.recipient.displayName}.`);
+      } catch (err) {
+        console.error('[widget] send_message failed', err);
+        showStatus(`Failed: ${err?.message || 'unknown error'}`, 'error');
+        el.btnSend.disabled = false;
+        el.btnSend.textContent = 'Send';
+      } finally {
+        state.isSending = false;
+        reportSize();
+      }
+    });
+
+    el.btnOpen.addEventListener('click', async () => {
+      if (!state.recipient) return;
+      const url = `https://teams.microsoft.com/l/chat/0/0?users=${encodeURIComponent(
+        state.recipient.email,
+      )}`;
+      console.log('%c[widget]%c Open clicked', LW.tag, LW.muted);
+      await bridge.openLink(url);
+    });
+
+    // ─── Status + sizing ─────────────────────────────────────────────────
+    function showStatus(text, level) {
+      el.status.textContent = text;
+      el.status.className = `status visible ${level}`;
+      reportSize();
+    }
+    function reportSize() {
+      // Use rAF so layout has settled.
+      requestAnimationFrame(() => {
+        const r = el.card.getBoundingClientRect();
+        bridge.notifySize({ width: Math.ceil(r.width), height: Math.ceil(r.height) });
+      });
+    }
+
+    // ─── MCP Apps handshake ──────────────────────────────────────────────
+    bridge.onInitialize((params) => {
+      // params: { protocolVersion, toolName, toolInput, toolResult, hostContext }
+      const input = params?.toolInput ?? params?.structuredContent ?? {};
+      console.log(
+        '%c[widget]%c handling ui/initialize toolName=%o toolInput=%o',
+        LW.tag,
+        LW.muted,
+        params?.toolName,
+        input,
+      );
+      if (input && input.email) {
+        setRecipient({
+          displayName: input.to || input.displayName || input.email,
+          email: input.email,
+          initials: input.initials || String(input.to || '??').slice(0, 2).toUpperCase(),
+          color: input.color || '#5B5FC7',
+        });
+      }
+      if (input && input.draftBody) {
+        el.body.innerHTML = input.draftBody;
+      }
+      applyHostTheme(params?.hostContext);
+      // Acknowledge and report initial size.
+      queueMicrotask(() => {
+        reportSize();
+        bridge.notifyInitialized();
+      });
+      return { protocolVersion: '2026-01-26' };
+    });
+
+    bridge.onToolInput((params) => {
+      // Streamed arguments — lets us prefill before the tool result arrives.
+      const input = params?.arguments ?? params ?? {};
+      if (input.email) {
+        setRecipient({
+          displayName: input.to || input.email,
+          email: input.email,
+          initials: input.initials || String(input.to || '??').slice(0, 2).toUpperCase(),
+          color: input.color || '#5B5FC7',
+        });
+      }
+    });
+
+    bridge.onHostContextChanged((ctx) => applyHostTheme(ctx));
+
+    function applyHostTheme(ctx) {
+      if (!ctx) return;
+      if (ctx.styleVariables) {
+        Object.entries(ctx.styleVariables).forEach(([k, v]) => {
+          document.documentElement.style.setProperty(k, String(v));
+        });
+      }
+      if (ctx.theme === 'dark') {
+        document.documentElement.style.setProperty('--surface', '#292929');
+        document.documentElement.style.setProperty('--surface-alt', '#3D3D3D');
+        document.documentElement.style.setProperty('--border', '#484644');
+        document.documentElement.style.setProperty('--border-strong', '#605E5C');
+        document.documentElement.style.setProperty('--text', '#F3F2F1');
+        document.documentElement.style.setProperty('--text-muted', '#C8C6C4');
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      }[c]));
+    }
+
+    // Initial paint
+    renderChip();
+    reportSize();
+  </script>
+</body>
+</html>
