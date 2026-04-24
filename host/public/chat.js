@@ -34,6 +34,22 @@ console.log('%c[host]%c chat page booted', L.host, L.muted);
 const messageList = document.getElementById('message-list');
 const form = document.getElementById('composer');
 const input = document.getElementById('composer-input');
+const debugTimeline = document.getElementById('debug-timeline');
+const debugCount = document.getElementById('debug-count');
+const debugClearButton = document.getElementById('debug-clear');
+
+const MAX_DEBUG_EVENTS = 80;
+let debugEventCount = 0;
+
+connectDebugStream();
+
+debugClearButton.addEventListener('click', () => {
+  debugTimeline.innerHTML = '';
+  debugEventCount = 0;
+  updateDebugCount();
+});
+
+updateDebugCount();
 
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -42,9 +58,23 @@ form.addEventListener('submit', async (e) => {
   input.value = '';
   addTextBubble('user', text);
   console.log('%c[host]%c user sent: %o', L.host, L.muted, text);
+  addDebugEvent({
+    direction: 'local',
+    channel: 'host',
+    label: 'chat/input',
+    preview: text,
+    detail: { message: text },
+  });
 
   try {
     console.log('%c[host → /api/chat]%c POST', L.out, L.muted, { message: text });
+    addDebugEvent({
+      direction: 'outgoing',
+      channel: 'host api',
+      label: 'chat/request',
+      preview: text,
+      detail: { message: text },
+    });
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -58,12 +88,26 @@ form.addEventListener('submit', async (e) => {
       bubbles.length,
       bubbles.map((b) => b.type),
     );
+    addDebugEvent({
+      direction: 'incoming',
+      channel: 'host api',
+      label: 'chat/response',
+      preview: summarizeBubbles(bubbles),
+      detail: { bubbles },
+    });
     for (const b of bubbles) {
       if (b.type === 'text') addTextBubble('assistant', b.text);
       else if (b.type === 'mcp-app') addMcpAppBubble(b);
     }
     scrollToBottom();
   } catch (err) {
+    addDebugEvent({
+      direction: 'incoming',
+      channel: 'host api',
+      label: 'chat/error',
+      preview: err.message,
+      detail: { error: err.message },
+    });
     addTextBubble('assistant', `(error: ${err.message})`);
   }
 });
@@ -136,6 +180,13 @@ function mountMcpApp(iframe, bubble) {
     { uri: bubble.resource.uri, toolName: bubble.toolName },
     bubble.resource.externalUrl,
   );
+  addDebugEvent({
+    direction: 'local',
+    channel: 'host',
+    label: 'mcp-app/render',
+    preview: `${bubble.resource.uri} (${bubble.toolName})`,
+    detail: bubble,
+  });
   // Per-iframe RPC server state.
   const bridge = {
     iframe,
@@ -200,10 +251,73 @@ function sendInitialize(bridge) {
 }
 
 function postToIframe(bridge, frame) {
+  addDebugEvent({
+    direction: 'outgoing',
+    channel: 'mcp app',
+    label: describeJsonRpc(frame),
+    preview: summarizeFrame(frame),
+    detail: frame,
+  });
   bridge.iframe.contentWindow?.postMessage(frame, bridge.expectedOrigin);
 }
 
+function connectDebugStream() {
+  const stream = new EventSource('/api/debug/stream');
+
+  stream.addEventListener('message', (event) => {
+    try {
+      const payload = JSON.parse(event.data);
+      handleDebugStreamEvent(payload);
+    } catch (err) {
+      console.warn('[host] could not parse debug stream payload', err);
+    }
+  });
+
+  stream.addEventListener('error', () => {
+    addDebugEvent({
+      direction: 'incoming',
+      channel: 'mcp server',
+      label: 'debug/stream-error',
+      preview: 'Lost connection to host debug stream',
+      detail: null,
+    });
+  });
+}
+
+function handleDebugStreamEvent(event) {
+  if (event.type !== 'mcp-rpc') return;
+
+  if (event.phase === 'request') {
+    addDebugEvent({
+      direction: 'outgoing',
+      channel: 'mcp server',
+      label: event.frame?.method || 'rpc/request',
+      preview: summarizeData(event.frame?.params),
+      detail: event,
+      timestamp: event.timestamp,
+    });
+    return;
+  }
+
+  addDebugEvent({
+    direction: 'incoming',
+    channel: 'mcp server',
+    label: event.frame?.error ? 'rpc/error' : event.frame?.result ? 'rpc/result' : 'rpc/response',
+    preview: summarizeData(event.frame?.error || event.frame?.result),
+    detail: event,
+    timestamp: event.timestamp,
+  });
+}
+
 async function dispatchFromIframe(bridge, frame) {
+  addDebugEvent({
+    direction: 'incoming',
+    channel: 'mcp app',
+    label: describeJsonRpc(frame),
+    preview: summarizeFrame(frame),
+    detail: frame,
+  });
+
   // Response to a host-initiated call: we only use this for ui/initialize ack.
   if (frame.id != null && (frame.result !== undefined || frame.error)) {
     console.log(
@@ -240,6 +354,13 @@ async function dispatchFromIframe(bridge, frame) {
           name,
           args,
         );
+        addDebugEvent({
+          direction: 'outgoing',
+          channel: 'host proxy',
+          label: 'tools/call',
+          preview: summarizeData(args),
+          detail: { name, arguments: args, via: '/api/tool' },
+        });
         const res = await fetch('/api/tool', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -253,6 +374,13 @@ async function dispatchFromIframe(bridge, frame) {
           name,
           body.error ? { error: body.error } : body.result?.structuredContent ?? body.result,
         );
+        addDebugEvent({
+          direction: 'incoming',
+          channel: 'host proxy',
+          label: body.error ? 'tools/error' : 'tools/result',
+          preview: summarizeData(body.error ? body.error : body.result?.structuredContent ?? body.result),
+          detail: { via: '/api/tool', ...body },
+        });
         if (!res.ok || body.error) {
           postToIframe(bridge, {
             jsonrpc: '2.0',
@@ -267,6 +395,13 @@ async function dispatchFromIframe(bridge, frame) {
           });
         }
       } catch (err) {
+        addDebugEvent({
+          direction: 'incoming',
+          channel: 'host proxy',
+          label: 'tools/error',
+          preview: err.message,
+          detail: { name, error: err.message, via: '/api/tool' },
+        });
         postToIframe(bridge, {
           jsonrpc: '2.0',
           id: frame.id,
@@ -361,3 +496,142 @@ addTextBubble(
   'assistant',
   "Hi! I'm a demo host for MCP Apps. Try: *Send Babak a message in Teams*",
 );
+
+function addDebugEvent({ direction = 'local', channel, label, preview, detail, timestamp }) {
+  const item = document.createElement('li');
+  item.className = `debug-entry ${direction}`;
+
+  const previewText = summarizeData(preview);
+  const detailText = formatDetail(detail);
+  const flowText = describeFlow(channel, direction, label);
+  const protocolText = `${channel} · ${label}`;
+  const eventTime = timestamp ? new Date(timestamp) : new Date();
+  item.innerHTML = `
+    <div class="debug-entry-head">
+      <div class="debug-entry-main">
+        <div class="debug-entry-meta">
+          <span class="debug-icon ${direction}" aria-hidden="true">${directionIcon(direction)}</span>
+          <span class="debug-label">${escapeAttr(flowText)}</span>
+          <span class="debug-protocol">${escapeAttr(protocolText)}</span>
+        </div>
+        <div class="debug-preview-row">
+          <div class="debug-preview">${escapeAttr(previewText)}</div>
+          ${detailText ? `
+            <details class="debug-detail-toggle">
+              <summary>Details</summary>
+              <div class="debug-detail">${escapeAttr(detailText)}</div>
+            </details>
+          ` : ''}
+        </div>
+      </div>
+      <div class="debug-time">${escapeAttr(formatTimestamp(eventTime))}</div>
+    </div>
+  `;
+
+  debugTimeline.appendChild(item);
+  debugEventCount += 1;
+  while (debugTimeline.children.length > MAX_DEBUG_EVENTS) {
+    debugTimeline.removeChild(debugTimeline.firstElementChild);
+  }
+  updateDebugCount();
+  debugTimeline.scrollTop = debugTimeline.scrollHeight;
+}
+
+function updateDebugCount() {
+  const visible = debugTimeline.children.length;
+  debugCount.textContent = `${visible} event${visible === 1 ? '' : 's'}`;
+}
+
+function directionIcon(direction) {
+  if (direction === 'outgoing') return '&rarr;';
+  if (direction === 'incoming') return '&larr;';
+  return '&bull;';
+}
+
+function describeFlow(channel, direction, label) {
+  if (channel === 'mcp server') {
+    if (direction === 'outgoing') return 'Host sends to MCP server';
+    if (direction === 'incoming') return 'MCP server returns to host';
+  }
+
+  if (channel === 'mcp app') {
+    if (direction === 'outgoing') return 'Host sends to MCP app';
+    if (direction === 'incoming') return 'MCP app sends to host';
+    return 'Host mounts MCP app';
+  }
+
+  if (channel === 'host proxy') {
+    if (direction === 'outgoing') return 'Host proxies to MCP server';
+    if (direction === 'incoming') return 'MCP server returns to host';
+  }
+
+  if (channel === 'host api') {
+    if (direction === 'outgoing') return 'Host sends chat request';
+    if (direction === 'incoming') return 'Host receives chat response';
+  }
+
+  if (channel === 'host') {
+    if (label === 'mcp-app/render') return 'Host renders MCP app iframe';
+    return 'Host event';
+  }
+
+  return direction === 'incoming' ? 'Incoming event' : direction === 'outgoing' ? 'Outgoing event' : 'Local event';
+}
+
+function formatTimestamp(date) {
+  const base = date.toLocaleTimeString([], {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return `${base}.${String(date.getMilliseconds()).padStart(3, '0')}`;
+}
+
+function describeJsonRpc(frame) {
+  if (frame.method) return frame.method;
+  if (frame.error) return 'rpc/error';
+  return 'rpc/result';
+}
+
+function summarizeFrame(frame) {
+  if (frame.method) return summarizeData(frame.params);
+  if (frame.error) return summarizeData(frame.error);
+  return summarizeData(frame.result);
+}
+
+function summarizeBubbles(bubbles) {
+  if (!Array.isArray(bubbles) || !bubbles.length) return 'No bubbles returned';
+  return bubbles
+    .map((bubble) => {
+      if (bubble.type === 'text') return `text: ${summarizeData(bubble.text)}`;
+      if (bubble.type === 'mcp-app') return `mcp-app: ${bubble.toolName}`;
+      return bubble.type || 'unknown';
+    })
+    .join(' | ');
+}
+
+function summarizeData(value) {
+  if (value == null) return 'No payload';
+  if (typeof value === 'string') return collapseWhitespace(value);
+  try {
+    return collapseWhitespace(JSON.stringify(value));
+  } catch {
+    return collapseWhitespace(String(value));
+  }
+}
+
+function collapseWhitespace(value) {
+  const compact = String(value).replace(/\s+/g, ' ').trim();
+  return compact.length > 160 ? `${compact.slice(0, 157)}...` : compact;
+}
+
+function formatDetail(value) {
+  if (value == null) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
+}

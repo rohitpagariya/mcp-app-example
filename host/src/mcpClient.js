@@ -6,13 +6,19 @@
 let seq = 1;
 
 export class McpClient {
-  constructor(endpoint) {
+  constructor(endpoint, options = {}) {
     this.endpoint = endpoint;
     this.initialized = false;
+    this.onRpcEvent = options.onRpcEvent || null;
   }
 
   async #rpc(method, params) {
     const id = seq++;
+    this.onRpcEvent?.({
+      phase: 'request',
+      endpoint: this.endpoint,
+      frame: { jsonrpc: '2.0', id, method, params },
+    });
     const res = await fetch(this.endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -20,6 +26,11 @@ export class McpClient {
     });
     if (!res.ok) throw new Error(`MCP HTTP ${res.status}`);
     const frame = await res.json();
+    this.onRpcEvent?.({
+      phase: frame.error ? 'error' : 'response',
+      endpoint: this.endpoint,
+      frame,
+    });
     if (frame.error) {
       const err = new Error(frame.error.message || 'MCP error');
       err.code = frame.error.code;
